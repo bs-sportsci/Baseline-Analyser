@@ -1,4 +1,3 @@
-
 library(shiny)
 library(FITfileR)
 library(shinythemes)
@@ -67,8 +66,6 @@ ui <- fluidPage(
                                 column(width = 6, plotOutput("plotFITsub", width = "100%")),
                                 column(width = 6, plotOutput("plotPARVOmax", width = "100%")),
                                 column(width = 6, plotOutput("plotPARVOsub", width = "100%")))),
-       tabPanel("Thresholds", plotOutput("plotThresholds"), sliderInput("exDuration", "Test Time (min)", min = 0, max = 15, value = c(1,13), step = 0.25, width = "100%"),
-                DT::dataTableOutput("VentThresh")),
      tabPanel("Settings",
               sliderInput("y1_max", "HR Y-Axis Max",min = 120, max = 220, value = 200, step = 10),
               sliderInput("y2_max", "Power Y-Axis Max",min = 50, max = 550, value = 450, step = 25),
@@ -184,7 +181,6 @@ server <- function(input, output) {
   })
   
   export_max <- reactive({
-    # req(input$FITmax,input$FITsub, input$PARVOmax,input$PARVOsubmax)
     range_submax <- range_submax()
     sample_rate <- sample_rate_sub()
 
@@ -195,7 +191,7 @@ server <- function(input, output) {
     subFit <-df_FITsub()
     subPARVO <- df_PARVOsub()
     maxFit <- df_FITmax()
-    maxPARVO <- df_PARVOmax_30s()
+    maxPARVO <- df_PARVOmax()
     PARVOname <- characteristics[6,2]
     name<-read.csv(text=PARVOname, header=FALSE, stringsAsFactors=FALSE,col.names = c("Last_Name", "First_Name"))
     firstname<-name[2]
@@ -204,7 +200,7 @@ server <- function(input, output) {
     height <- (as.numeric(characteristics[8,4]))/100
     weight <- as.numeric(characteristics[8,9])
     age <- as.numeric(characteristics[7,2])
-    sex <- if (characteristics[7,5] == " F") {sex<-"Female"}  else {sex<-"Male"}
+    sex <- if (characteristics[7,5] == "F") {sex<-"Female"}  else {sex<-"Male"}
     abs_max <- max(maxPARVO$`VO2`)
     rel_max <- max(maxPARVO$`VO2/kg`)
     hr_max <- max(c(max(maxPARVO$HR),max(maxFit$heart_rate)))
@@ -288,115 +284,6 @@ server <- function(input, output) {
       return(NULL)
     df <- read_data(tempxlsxMAX(), metabolic_cart = "parvo",time_column = "TIME")
     return(df)
-  })
-  
-  df_PARVOmax_30s <- reactive({
-    df_PARVOmax_30s <- df_PARVOmax() 
-    #  %>% interpolate() %>% 
-    #   perform_average(type = "bin", bins = 30)
-  })
-  
-  thresholds2 <- reactive({
-    df_PARVOmax <- df_PARVOmax()
-    if (is.null(df_PARVOmax)) {return(NULL)}
-    range <- input$exDuration * sample_rate_max()
-    if (range[2] > nrow(df_PARVOmax)) {range[2] <-nrow(df_PARVOmax)}
-      
-      
-    df_PARVOmax$exCO2 <- ((df_PARVOmax$VCO2 ^ 2)/df_PARVOmax$VO2) - df_PARVOmax$VCO2
-    df_PARVOmax$exVE <- ((df_PARVOmax$VE ^ 2)/df_PARVOmax$VCO2) - df_PARVOmax$VE
-    df_PARVOmax$`VE/VO2` <- df_PARVOmax$VE/df_PARVOmax$VO2
-    df_PARVOmax$`VE/VCO2` <- df_PARVOmax$VE/df_PARVOmax$VCO2
-     
-    lm_vslope1 <- lm(VCO2 ~ VO2, data = df_PARVOmax)
-    seg_vslope1 <- segmented(lm_vslope1)
-    VT1 <- seg_vslope1$psi[,2]
-    VT1i <- which(abs(df_PARVOmax$VO2 - VT1) == min(abs(df_PARVOmax$VO2 - VT1)))
-    
-    lm_exCO2 <- lm(exCO2 ~ TIME, data = df_PARVOmax)
-    seg_exCO2 <- segmented(lm_exCO2)
-    
-    lm_VEVO2 <- lm(`VE/VO2` ~ TIME, data = df_PARVOmax)
-    seg_VEVO2 <- segmented(lm_VEVO2)
-    
-    VT1a <- df_PARVOmax$TIME[VT1i]
-    VT1b <- seg_exCO2$psi[,2]
-    VT1c <- seg_VEVO2$psi[,2]
-    
-    VT1av <- mean(c(VT1a, VT1b, VT1c))
-    
-    lm_vslope2 <- lm(VE ~ VCO2, data = df_PARVOmax)
-    seg_vslope2 <- segmented(lm_vslope2)
-    VT2 <- seg_vslope2$psi[,2]
-    VT2i <- which(abs(df_PARVOmax$VCO2 - VT2) == min(abs(df_PARVOmax$VCO2 - VT2)))
-    
-    lm_exVE <- lm(exVE ~ TIME, data = df_PARVOmax)
-    seg_exVE <- segmented(lm_exVE)
-    
-    lm_VEVCO2 <- lm(`VE/VCO2` ~ TIME, data = df_PARVOmax)
-    seg_VEVCO2 <- segmented(lm_VEVCO2)
-    
-    VT2a <- df_PARVOmax$TIME[VT2i]
-    VT2b <- seg_exVE$psi[,2]
-    VT2c <- seg_VEVCO2$psi[,2]
-    
-    VT2av <- mean(c(VT2a, VT2b, VT2c))
-    
-    VTtable <- rbind(c(VT1a, VT1b, VT1c, VT1av),c(VT2a, VT2b, VT2c, VT2av))
-    
-    return(VTtable)
-     })
-  
-  
-  thresholds <- reactive({
-    df_PARVOmax <- df_PARVOmax()
-     export_max <- export_max()
-    
-    logest <- function(y, x, ...){
-      if(missing(x) || is.null(x)) x <- seq_along(y)
-      result <- lm(log(y) ~ x, ...)
-      exp(coef(result))
-    }
-  
-    expVCO2<-logest(df_PARVOmax$VCO2,df_PARVOmax$VO2)
-    T1VO2 <- log(1/(expVCO2[1]*log(expVCO2[2])))/log(expVCO2[2])
-    
-    VO2linear <- c(export_max$VO2_Abs_1, export_max$VO2_Abs_2, export_max$VO2_Abs_3)
-    HRlinear <- c(export_max$HR_1, export_max$HR_2, export_max$HR_3)
-    Wlinear <- c(export_max$Submax_Power_1, export_max$Submax_Power_2, export_max$Submax_Power_3)
-    HRVO2line<- lm(HRlinear ~ VO2linear)
-    WVO2line <- lm(Wlinear ~ VO2linear)
-
-    vt1hr<- HRVO2line$coefficients[2]*T1VO2 + HRVO2line$coefficients[1]
-    vt1W <- WVO2line$coefficients[2]*T1VO2 + WVO2line$coefficients[1]
-
-
-     T1index <- max(which(df_PARVOmax$HR < vt1hr, arr.ind = T))
-    
-    VT1<-data.frame(row.names = "VT1","VO2" = T1VO2,"HR" = round(vt1hr), "Index"=T1index)
-    
-    zVO2 <- (df_PARVOmax$VO2-mean(df_PARVOmax$VO2))/sd(df_PARVOmax$VO2)
-    zVE <-(df_PARVOmax$VE-mean(df_PARVOmax$VE))/sd(df_PARVOmax$VE)
-    x <- as.numeric(row(df_PARVOmax[1]))
-    
-    # Fit the first 3rd order polynomial model
-    model1 <- lm(zVO2 ~ poly(x, 3, raw = T))
-    
-    # Fit the second 3rd order polynomial model
-    model2 <- lm(zVE ~ poly(x, 3, raw = T))
-    
-    # Find the intersecting points by solving for x
-    poly1_coeff <- coefficients(model1)
-    poly2_coeff <- coefficients(model2)
-    
-    # Solve for the intersection
-    intersection_x <- polyroot(poly2_coeff - poly1_coeff)
-    
-   VT2i <- round(max(as.numeric(intersection_x)))
-    VT2 <- data.frame(row.names = "VT2","VO2" = df_PARVOmax$VO2[VT2i], "HR" = df_PARVOmax$HR[VT2i], "Index"=VT2i)
-    VT <- rbind(VT1,VT2)
-
-    return(VT)
   })
   
   df_PARVOsub <- reactive({
@@ -599,54 +486,6 @@ server <- function(input, output) {
     
     p + labs(x = "Time (min)", title = "Parvo Submax Data")
   })
-  
-  output$plotThresholds <- renderPlot({
-    sample_rate <- sample_rate_max()
-    df <- df_PARVOmax()
-    thresholds <- thresholds2()
-    if (is.null(df)) {
-      # Handle the case where df is NULL (error occurred)
-      return(NULL)
-    }
-    
-    x_col <- row(df[1])/sample_rate
-    
-    # Set the limits for the primary and secondary y-axes separately
-     # y3_max <- 45
-     # y4_max <- 200
-     # ycoef<- y4_max/y3_max
-    
-    p <- ggplot(df, aes(x = x_col)) + 
-      geom_line(aes(y= VE/VO2),color="blue")+
-      geom_line(aes(y= VE/VCO2),color="black")+
-      scale_y_continuous(
-        name = "Ventilatory Equivalents",
-        breaks = scales::breaks_pretty(11) )+
-      geom_vline(xintercept = thresholds[1,4]/60, linetype="dotted",
-                 color = "orange", linewidth=1)+
-      geom_vline(xintercept = thresholds[2,4]/60, linetype="dotted",
-                 color = "red", linewidth=1)+
-        scale_x_continuous(~.,breaks = scales::breaks_pretty(max(x_col)),name = "Time (min)")
-      
-
-  # geom_line(aes(y = HR/ycoef),color = "red") +
-  #      scale_y_continuous(
-  #        name = "Ventilatory Equivalents",
-  #        breaks = scales::breaks_pretty(11),
-  #        sec.axis = sec_axis(~.*ycoef, name = "Heart Rate", breaks = scales::breaks_pretty(11)),
-         # limits = c(0, y3_max)
-         # ) + 
-      # scale_color_manual(name = "",values = c("VO2/kg" = "purple", "RER" = "black"))+
-      # theme(legend.position = c(0.5,0.925),legend.direction = "horizontal") +
-     #   scale_x_continuous(~.,breaks = scales::breaks_pretty(max(x_col)),name = "Time (min)")
-     # 
-     p + labs(x = "Time (min)", title = "Parvo Threshold Data")
-  })
-  
-   output$VentThresh <- DT::renderDataTable({
-     req(input$PARVOmax)
-     thresholds2()/60
-   })
 }
 
 # Run the application 
